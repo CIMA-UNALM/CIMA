@@ -1,0 +1,172 @@
+---
+title: "Text Mining: Análisis del mensaje presidencial 28 de julio del 2024"
+author: "Quispe C. Juliana"
+date: "Última edición: `r format(Sys.time(), '%d %m %Y')`"
+output: rmdformats::readthedown
+downcute_theme: "chaos"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.align="center")
+# Otras opciones
+cat("\014")
+options(scipen=999)    # Eliminar la notación científica
+options(digits = 3)    # El número de decimales
+
+#Link RPubs: https://rpubs.com/JulianaQC/
+
+# Paquetes  
+library(pacman)
+p_load(vembedr, tidyverse, tidytext, tm, wordcloud,plotrix,
+       wordcloud2, pdftools, patchwork,gganimate,
+       widyr,dplyr,magrittr, readxl, stringr,scales,plotly, rmdformats)
+
+```
+
+<style>
+h1.title {
+text-align: center;
+}
+</style>
+
+## Introducción
+
+El análisis de discursos presidenciales permite explorar y comprender la perspectiva y estrategias de un gobierno en momentos clave. En este contexto, el discurso presidencial de la presidenta Dina Boluarte, pronunciado el 28 de julio de 2024, constituye una fuente valiosa para identificar las principales temáticas y líneas de acción de su gestión. Mediante técnicas de Text mining, este trabajo busca extraer patrones lingüísticos, términos recurrentes y estructuras narrativas que ofrezcan una visión detallada de los enfoques políticos y sociales presentados en su discurso.
+
+### Palabras más frecuentes en su discurso:
+
+```{r lectura, warning=FALSE, include=FALSE}
+dina <- pdf_text("mensaje-a-la-nacion-fiestas-patrias.pdf")
+dina <- paste(dina, collapse = " ")
+str_count(dina, "MENSAJE DEL PRESIDENTE CONSTITUCIONAL DEL PERÚ")
+str_count(dina, "países")
+dina <-  str_remove_all(dina, "señor")
+dina <-  str_remove_all(dina, "debemos")
+dina <-  str_remove_all(dina, "perú")
+dina <-  str_remove_all(dina, "Perú")
+dina <-  str_remove_all(dina, "país")
+dina <-  str_remove_all(dina, "personas")
+dina <-  str_remove_all(dina, "países")
+dina <-  str_remove_all(dina, "MENSAJE DEL PRESIDENTE CONSTITUCIONAL DEL PERÚ")
+dina <-  str_remove_all(dina, "CONGRESO NACIONAL")
+str_count(dina, "\n[:blank:]+[:digit:]+\n")
+dina <- str_replace_all(dina, "[:blank:]{2,}", " ")
+str_count(dina, "[:punct:]")
+dina <- str_remove_all(dina, "[:punct:]")
+str_count(dina, "[:digit:]")
+dina <- str_remove_all(dina, "[:digit:]")
+dina <- tibble(dina) %>% 
+  unnest_tokens(Token, dina) %>% 
+  mutate(Token = removeNumbers(Token))
+dina$Token <- str_replace(dina$Token,"pueblos","pueblo")
+dina$Token <- str_replace(dina$Token,"histórica","história")
+dina$Token <- str_replace(dina$Token,"proyectos","proyecto")
+stopwords <- read_excel("CustomStopWords.xlsx")
+names(stopwords) <- c("Token","Fuente")
+stopwords <- stopwords[!duplicated(stopwords$Token),]
+dina <- dina %>% anti_join(stopwords)
+dina_frecuencias <- dina %>%
+  count(Token, sort = TRUE)
+graficoA1 <- dina_frecuencias %>% 
+  top_n(10) %>% 
+  ggplot() + aes(x = fct_reorder(Token, n), 
+                 y = n,fill=fct_reorder(Token, n)) +
+  geom_col() +
+  labs(x = NULL, y = "Frecuencia", 
+       title = "Gráfico de las 10 palabras más frecuentes del discurso",
+       subtitle = "Dina Boluarte - 28 de julio de 2024",
+       caption = "Fuente: Presidencia de la República del Perú") +
+  scale_fill_manual(values=c("#E6FFEA", "#DAFDBA", "#B4F0C3", "#9AEBA3", "#6CE4A0", "#45C4B0", "#2A8A92", "#13678A", "#094C60", "#012030"  
+  
+)) +
+  theme_bw() +
+  theme(legend.position = "none") + 
+  coord_flip()
+  
+```
+
+```{r}
+
+#graficoA1
+ggplotly()
+```
+
+El gráfico muestra las 10 palabras más frecuentes en el discurso presidencial de Dina Boluarte, clasificadas según su frecuencia de aparición. Las palabras más utilizadas son "millones", "nacional", e "inversión", lo que indica un enfoque en temas económicos, presupuestarios y de alcance nacional.
+
+Otros términos destacados como "soles", "año", y "proyecto" reflejan una narrativa orientada a la planificación, ejecución de políticas y asignación de recursos y presupuesto. La presencia de "gobierno", "desarrollo", "salud", y "Lima" indica atención a prioridades gubernamentales y sociales, con énfasis particular en la capital y la salud en la población.
+
+### Nube de palabras: Una forma más visual
+
+```{r}
+#----------------------------------#
+# IV. WordCloud - Nube de Palabras #
+#----------------------------------#
+
+dina_nube <- dina_frecuencias[1:300,]
+
+# Nube de palabras con el paquete wordcloud2
+set.seed(2021)
+wordcloud2(data=dina_nube,size = 0.5,
+           color = rep_len(c('Black','#6CE4A0'),nrow(dina_nube)))
+
+```
+
+## Sentimientos
+
+```{r include=FALSE}
+sentimientos <- read.delim("sentimientos_2.txt", encoding = "UTF-8")
+sentimientos <- as.tibble(sentimientos)
+table(sentimientos$sentimiento) #Cantidad de palabras registradas segun sentimiento
+dina_sentimiento <- dina %>% 
+  inner_join(sentimientos,by=c("Token"="palabra"))
+
+```
+
+### Sentimientos más frecuentes en el discurso
+
+```{r}
+
+dina_sentimiento %>% 
+  dplyr::count(sentimiento) %>% 
+  ggplot() + aes(x=fct_reorder(sentimiento,n),
+                 y=n,
+                 fill=fct_reorder(sentimiento,n)) + 
+  geom_col(show.legend = F) + coord_flip() +
+  theme(legend.position = "none") + 
+  labs(title ="Análisis de sentimientos del discurso presidencial",
+       subtitle = "28 de julio de 2024 - Dina Boluarte",
+       caption = "Fuente: Elaboración propia",
+       x = "Sentimientos",
+       y= "Frecuencia") +
+  scale_fill_manual(values=c("#E6FFEA", "#DAFDBA", "#B4F0C3", "#9AEBA3", "#6CE4A0", "#45C4B0", "#2A8A92", "#13678A", "#094C60", "#012030"  
+  )) +
+  theme_bw() 
+
+```
+
+### Palabras más frecuentes según sentimiento
+
+```{r message=FALSE, warning=FALSE}
+# 4. Visualizando los sentimientos 
+contar_palabras_A1 <- dina %>% 
+  inner_join(sentimientos,by=c("Token"="palabra")) %>%
+  dplyr::count(Token,sentimiento) %>% 
+  group_by(sentimiento) %>% 
+  top_n(5,n) 
+
+# 5. Creando un gráfico de barras 
+ggplot(contar_palabras_A1) + 
+  aes(x=fct_reorder(Token,n),
+      y=n,
+      fill=sentimiento)+
+  facet_wrap( ~ sentimiento, scales= "free") +
+  labs(title= "ANÁLISIS DE SENTIMIENTO - Discurso 2024",
+       caption = "Fuente: Elaboración propia",
+       x= "Palabras", y="Frecuencia") + 
+  scale_fill_manual(values=c("#E6FFEA", "#DAFDBA", "#B4F0C3", "#9AEBA3", "#6CE4A0", "#45C4B0", "#2A8A92", "#13678A", "#094C60", "#012030"  
+  )) +
+  geom_col(show.legend = FALSE) +
+  theme_bw() +
+  coord_flip() 
+```
+
